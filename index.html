@@ -309,13 +309,64 @@ button:hover {
     const sendButton = document.getElementById("sendButton");
 
     // Ollamaで使用するAIモデル
-    const MODEL = "llama3.2:3b";
+    const MODEL = "qwen3:14b";
 
     // OllamaのチャットAPI
     const API_URL = "http://localhost:11434/api/chat";
 
     // 会話履歴
     const history = [];
+
+    // Wikipediaから質問に関係する概要を取得する
+    async function getWikipediaContext(query) {
+      try {
+        const url = new URL("https://ja.wikipedia.org/w/api.php");
+
+        url.search = new URLSearchParams({
+          action: "query",
+          generator: "search",
+          gsrsearch: query,
+          gsrlimit: "3",
+          prop: "extracts",
+          exintro: "1",
+          explaintext: "1",
+          exsentences: "8",
+          format: "json",
+          origin: "*"
+        }).toString();
+
+        const response = await fetch(url);
+
+        if (!response.ok) {
+          return "";
+        }
+
+        const data = await response.json();
+        const pages = Object.values(data.query?.pages || {})
+          .sort((a, b) => (a.index || 999) - (b.index || 999));
+
+        return pages
+          .filter(page => page.extract)
+          .map((page, index) =>
+            `資料${index + 1}「${page.title}」\n${page.extract}`
+          )
+          .join("\n\n");
+
+      } catch (error) {
+        console.warn("Wikipediaの取得に失敗しました。", error);
+        return "";
+      }
+    }
+
+    // Markdown記号や思考過程を画面に出さない
+    function cleanAnswer(text) {
+      return text
+        .replace(/<think>[\s\S]*?<\/think>/gi, "")
+        .replace(/\*\*/g, "")
+        .replace(/^#{1,6}\s*/gm, "")
+        .replace(/^\s*[-*]\s+/gm, "・")
+        .trim();
+    }
 
     // メッセージを画面に表示する関数
     function addMessage(text, type) {
@@ -364,6 +415,13 @@ button:hover {
       );
 
       try {
+        // Wikipediaの情報を取得する。失敗しても会話は続ける
+        const wikipediaContext = await getWikipediaContext(text);
+
+        const factRule = wikipediaContext
+          ? "次のWikipedia資料を根拠として回答してください。資料と自分の知識が食い違う場合は資料を優先してください。資料にない数字・日付・地名は推測せず、確認できないと伝えてください。\n\n" + wikipediaContext
+          : "Wikipedia資料を取得できませんでした。数字・日付・地名など、事実に自信がない内容は推測せず、確認できないと伝えてください。";
+
         // Ollamaへ質問を送る
         const response = await fetch(API_URL, {
           method: "POST",
@@ -379,7 +437,7 @@ button:hover {
               {
                 role: "system",
                 content:
-                  "あなたはASTRAという親切で正確なAIアシスタントです。必ず自然な日本語だけで、初心者にも分かりやすく回答してください。事実に自信がない場合は推測で作らず、「確認できません」と伝えてください。地名・年代・数字・固有名詞は特に慎重に確認してください。記号の**や#は使わず、普通の文章で簡潔に回答してください。"
+                  "あなたはASTRAという親切で正確なAIアシスタントです。必ず自然な日本語だけで、初心者にも分かりやすく簡潔に回答してください。英語の思考過程は表示しないでください。記号の**や#は使わず、普通の文章で回答してください。\n\n" + factRule
               },
 
               ...history
@@ -401,7 +459,7 @@ button:hover {
         const data = await response.json();
 
         // AIの回答を取り出す
-        const answer = data.message.content;
+        const answer = cleanAnswer(data.message.content);
 
         // 「考えています…」をAIの回答に変更
         loadingMessage.textContent = answer;
