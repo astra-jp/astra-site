@@ -309,7 +309,7 @@ button:hover {
     const sendButton = document.getElementById("sendButton");
 
     // Ollamaで使用するAIモデル
-    const MODEL = "qwen3:14b";
+    const MODEL = "llama3.2:3b";
 
     // OllamaのチャットAPI
     const API_URL = "http://localhost:11434/api/chat";
@@ -515,6 +515,13 @@ button:hover {
 
               ...history
             ],
+
+            // 軽量モデルで短く回答し、待ち時間を抑える
+            options: {
+              temperature: 0.2,
+              num_predict: 300,
+              num_ctx: 8192
+            },
 
             // 回答をまとめて受け取る
             stream: false
