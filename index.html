@@ -334,11 +334,11 @@ button:hover {
           action: "query",
           generator: "search",
           gsrsearch: searchQuery,
-          gsrlimit: "5",
+          gsrlimit: "2",
           prop: "extracts",
           exintro: "1",
           explaintext: "1",
-          exsentences: "20",
+          exsentences: "5",
           format: "json",
           origin: "*"
         }).toString();
@@ -356,7 +356,7 @@ button:hover {
         let context = pages
           .filter(page => page.extract)
           .map((page, index) =>
-            `資料${index + 1}「${page.title}」\n${page.extract}`
+            `資料${index + 1}「${page.title}」\n${page.extract.slice(0, 1600)}`
           )
           .join("\n\n");
 
@@ -386,18 +386,36 @@ button:hover {
               .map(table => table.textContent)
               .join(" ");
 
-            const paragraphText = Array.from(
-              documentData.querySelectorAll(".mw-parser-output > p")
-            )
-              .slice(0, 12)
-              .map(paragraph => paragraph.textContent)
-              .join(" ");
-
-            const articleText = (infoBoxText + " " + paragraphText)
+            const bodyText = documentData.body.textContent
               .replace(/\[[0-9]+\]/g, "")
               .replace(/\s+/g, " ")
+              .trim();
+
+            // 質問に多い事実項目の前後だけを抜き出して処理時間を短縮する
+            const keywords = ["面積", "人口", "所在地", "設立", "歴史", "特徴"]
+              .filter(word => query.includes(word));
+            const activeKeywords = keywords.length ? keywords : [searchQuery];
+            const snippets = [];
+
+            activeKeywords.forEach(word => {
+              let start = 0;
+              for (let count = 0; count < 4; count += 1) {
+                const position = bodyText.indexOf(word, start);
+                if (position < 0) break;
+                snippets.push(bodyText.slice(
+                  Math.max(0, position - 180),
+                  Math.min(bodyText.length, position + 420)
+                ));
+                start = position + word.length;
+              }
+            });
+
+            const articleText = (
+              infoBoxText.slice(0, 3500) + " " + snippets.join(" ")
+            )
+              .replace(/\s+/g, " ")
               .trim()
-              .slice(0, 18000);
+              .slice(0, 6000);
 
             if (articleText) {
               context += `\n\n詳細資料「${pages[0].title}」\n${articleText}`;
