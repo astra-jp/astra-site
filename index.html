@@ -320,17 +320,25 @@ button:hover {
     // Wikipediaから質問に関係する概要を取得する
     async function getWikipediaContext(query) {
       try {
+        // 「〜を教えて」などを除き、Wikipediaで見つけやすい検索語にする
+        const searchQuery = query
+          .replace(/[？?！!。、，,.]/g, " ")
+          .replace(/について|に関する|を教えてください|を教えて|教えてください|教えて|知りたい|とは/g, " ")
+          .replace(/面積|人口|場所|歴史|特徴|概要|詳細/g, " ")
+          .replace(/\s+/g, " ")
+          .trim() || query;
+
         const url = new URL("https://ja.wikipedia.org/w/api.php");
 
         url.search = new URLSearchParams({
           action: "query",
           generator: "search",
-          gsrsearch: query,
-          gsrlimit: "3",
+          gsrsearch: searchQuery,
+          gsrlimit: "5",
           prop: "extracts",
           exintro: "1",
           explaintext: "1",
-          exsentences: "8",
+          exsentences: "20",
           format: "json",
           origin: "*"
         }).toString();
@@ -345,12 +353,42 @@ button:hover {
         const pages = Object.values(data.query?.pages || {})
           .sort((a, b) => (a.index || 999) - (b.index || 999));
 
-        return pages
+        let context = pages
           .filter(page => page.extract)
           .map((page, index) =>
             `資料${index + 1}「${page.title}」\n${page.extract}`
           )
           .join("\n\n");
+
+        // 最も関連する記事は、表にある面積・人口なども取得する
+        if (pages[0]?.title) {
+          const detailUrl = new URL("https://ja.wikipedia.org/w/api.php");
+          detailUrl.search = new URLSearchParams({
+            action: "parse",
+            page: pages[0].title,
+            prop: "text",
+            format: "json",
+            origin: "*"
+          }).toString();
+
+          const detailResponse = await fetch(detailUrl);
+          if (detailResponse.ok) {
+            const detailData = await detailResponse.json();
+            const html = detailData.parse?.text?.["*"] || "";
+            const articleText = new DOMParser()
+              .parseFromString(html, "text/html")
+              .body.textContent
+              .replace(/\s+/g, " ")
+              .trim()
+              .slice(0, 14000);
+
+            if (articleText) {
+              context += `\n\n詳細資料「${pages[0].title}」\n${articleText}`;
+            }
+          }
+        }
+
+        return context;
 
       } catch (error) {
         console.warn("Wikipediaの取得に失敗しました。", error);
